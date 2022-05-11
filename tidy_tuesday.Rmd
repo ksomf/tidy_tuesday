@@ -1,0 +1,35 @@
+---
+title: "Tidy Tuesday Workbook"
+author: "Dr. Kim Y. Somfleth"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  bookdown::pdf_document2: 
+    template: "template.latex"
+    keep_tex: true
+bibliography: "tidy_tuesday.bib"
+biblio-style: "bookdown_template/bst/hunsrtnat.bst"
+link-citations: yes
+colorlinks: true
+
+params:
+  chapters: all
+---
+
+```{r include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+
+library(rethinking)
+library(ggplot2)
+library(ggthemes)
+library(tidyverse)
+```
+
+```{r main, child = if(params$chapters == 'all') 'weeks/2022_05_10.Rmd' }
+```
+
+```{r main, child = if(params$chapters != 'all') params$chapters }
+```
+
+```{r session}
+sessionInfo()
+```
