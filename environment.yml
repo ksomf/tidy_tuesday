@@ -4,7 +4,6 @@ channels:
 dependencies:
   - r
   - r-tidyverse
-  - r-shape
   - r-ggally
   - r-ggdist
   - r-ggforce
@@ -13,3 +12,7 @@ dependencies:
   - r-ggrepel
   - r-ggthemes
   - r-patchwork
+  - r-maps
+  - r-tidygeocoder
+  - r-shape
+  - r-showtext

@@ -8,14 +8,28 @@ library(GGally)
 library(ggdist)
 library(ggtext)
 library(patchwork)
+library(showtext)
 
 # Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
-theme_set(theme_minimal(base_size = 15, base_family = 'Inter'))
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+	theme_set(theme_minimal( base_size = 15, base_family = font_family ))
 theme_update(
    panel.grid.minor = element_blank()
-,  plot.title    = element_text( hjust=0, size=21, colour='black', family='Inter', face='bold'       , margin=margin(t=10, b=35)                   )
-,  plot.subtitle = element_text( hjust=0, size=14, colour='black', family='Inter', face='bold.italic', margin=margin(0, 0, 25, 0)                  )
-,  plot.caption  = element_text( hjust=1, size=10, colour='black', family='Inter', face='plain'      , margin=margin(30, 0, 0, 0), lineheight=1.05 )
+,  plot.title    = element_text( hjust=0, size=21, colour='black', family=font_family, face='bold'       , margin=margin(t=10, b=35)                   )
+,  plot.subtitle = element_text( hjust=0, size=14, colour='black', family=font_family, face='bold.italic', margin=margin(0, 0, 25, 0)                  )
+,  plot.caption  = element_text( hjust=1, size=10, colour='black', family=font_family, face='plain'      , margin=margin(30, 0, 0, 0), lineheight=1.05 )
 ,  plot.title.position   = 'plot'
 ,  plot.caption.position = 'plot'
 ,  plot.margin = margin(rep(20, 4))
@@ -72,7 +86,7 @@ year_max <- max(df_time$date) %>% year()
 break_years  <- seq(year_min, year_max, by=2)
 break_epochs <- break_years %>% lubridate::ymd(truncated=2L) %>% as.POSIXct() %>% as.integer()
 
-df_time %>% 
+p_time <- df_time %>% 
 	filter( date_type %in% c( 'marketing_authorisation_date', 'date_of_refusal_of_marketing_authorisation' )) %>% 
 	ggplot(aes(x=date_epoch, fill=date_type, order=date_type, group=NA)) +
 	geom_dots(linewidth=0) +
@@ -82,6 +96,6 @@ df_time %>%
 	theme(legend.position='none') +
 	labs(title='Record of drug authorisation',
 		 x=element_blank())
-ggsave('2023_wk11_plot.png', width=14, height=9)
+ggsave('2023_wk11_plot.pdf', plot=p_time, width=14, height=9)
 ```
 
