@@ -1,0 +1,87 @@
+---
+title: "Tidy Tuesday 2023 Week 11: European Drug Development"
+format: html
+---
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+theme_set(theme_minimal(base_size = 15, base_family = 'Inter'))
+theme_update(
+   panel.grid.minor = element_blank()
+,  plot.title    = element_text( hjust=0, size=21, colour='black', family='Inter', face='bold'       , margin=margin(t=10, b=35)                   )
+,  plot.subtitle = element_text( hjust=0, size=14, colour='black', family='Inter', face='bold.italic', margin=margin(0, 0, 25, 0)                  )
+,  plot.caption  = element_text( hjust=1, size=10, colour='black', family='Inter', face='plain'      , margin=margin(30, 0, 0, 0), lineheight=1.05 )
+,  plot.title.position   = 'plot'
+,  plot.caption.position = 'plot'
+,  plot.margin = margin(rep(20, 4))
+)
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-03-14/drugs.csv') 
+glimpse(data)
+
+df <- data
+```
+
+## EDA
+
+```{r eda_base}
+df %>% 
+	group_by(product_number) %>% 
+	summarise(num_records=n()) %>% 
+	filter(num_records > 1)
+
+df %>% 
+	group_by(product_number) %>% 
+	filter(n() > 1) %>% 
+	ungroup()
+```
+
+## Plots
+
+### Time Display
+
+```{r time_plot}
+date_columns <- c( 'first_published', 'revision_date', 'date_of_opinion', 'marketing_authorisation_date', 'date_of_refusal_of_marketing_authorisation' )
+
+thc <- khroma::colour('highcontrast')(3)
+colour_map <- c( marketing_authorisation_date=thc[['blue']], date_of_refusal_of_marketing_authorisation=thc[['red']])
+
+df_time <- df %>% 
+	#group_by(product_number) %>% 
+	#filter(n() > 1) %>% 
+	#ungroup() %>% 
+	select( product_number, all_of(date_columns) ) %>% 
+	mutate(across(!product_number, ~lubridate::as_date(.x) )) %>% 
+	pivot_longer( any_of(date_columns), names_to='date_type', values_to='date' ) %>% 
+	filter(!is.na(date)) %>% 
+	mutate(date_epoch=as.integer(as.POSIXct(date)))
+
+year_min <- min(df_time$date) %>% year()
+year_max <- max(df_time$date) %>% year()
+break_years  <- seq(year_min, year_max, by=2)
+break_epochs <- break_years %>% lubridate::ymd(truncated=2L) %>% as.POSIXct() %>% as.integer()
+
+df_time %>% 
+	filter( date_type %in% c( 'marketing_authorisation_date', 'date_of_refusal_of_marketing_authorisation' )) %>% 
+	ggplot(aes(x=date_epoch, fill=date_type, order=date_type, group=NA)) +
+	geom_dots(linewidth=0) +
+	theme(axis.text.y = element_blank()) +
+	scale_fill_manual(values=colour_map) +
+	scale_x_continuous( breaks=break_epochs, labels=break_years ) +
+	theme(legend.position='none') +
+	labs(title='Record of drug authorisation',
+		 x=element_blank())
+ggsave('2023_wk11_plot.png', width=14, height=9)
+```
+

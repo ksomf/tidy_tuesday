@@ -1,0 +1,15 @@
+name: tidy_tuesday
+channels:
+  - conda-forge
+dependencies:
+  - r
+  - r-tidyverse
+  - r-shape
+  - r-ggally
+  - r-ggdist
+  - r-ggforce
+  - r-ggbreak
+  - r-ggtext
+  - r-ggrepel
+  - r-ggthemes
+  - r-patchwork
