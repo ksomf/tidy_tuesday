@@ -1,6 +1,12 @@
 # My Tidy Tuesday
 
+My contributions to the #TidyTuesday , a weekly challenge to improve ones data wrangling and visualisation skills.
+
 ## Weeks
+
+### [2023 Week 24: SAFI Survey](https://github.com/ksomf/tidy_tuesday/tree/main/weeks/2023_wk24)
+
+![./main/weeks/2023_wk24/2023_wk24.pdf](https://raw.githubusercontent.com/ksomf/tidy_tuesday/main/weeks/2023_wk24/2023_wk24.pdf)
 
 ## Environment Instalation Instructions
 
