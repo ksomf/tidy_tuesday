@@ -16,3 +16,4 @@ dependencies:
   - r-tidygeocoder
   - r-shape
   - r-showtext
+  - r-svglite
