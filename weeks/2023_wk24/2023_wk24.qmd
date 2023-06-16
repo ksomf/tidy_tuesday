@@ -1,0 +1,119 @@
+---
+title: "Tidy Tuesday 2023 Week 24: SAFI Survey"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+library(showtext)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=10, r=0, b=35, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=0, b=25, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=30, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  plot.margin = margin(rep( 20, 4 )) )
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+data <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-13/safi_data.csv')
+
+months <- c( 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec' ) %>% 
+	set_names(paste0('lack_food_',str_to_lower(.))) %>% 
+	factor(., levels=.)
+
+for( i in 1:length(months) ){
+	data[names(months)[i]] <- str_detect( data$months_lack_food, as.character(months[i]) )
+}
+glimpse(data)
+
+df <- data %>% 
+	mutate(village = factor(village))
+
+colour_map = set_names(khroma::colour('highcontrast')(3), levels(df$village))
+```
+
+## EDA
+
+```{r eda_base}
+df_per_month <- df %>% 
+	select( village, no_membrs, years_liv, rooms, liv_count, no_meals, names(months) ) %>% 
+	pivot_longer( names(months), names_to='month', names_transform=~str_remove(.x, 'lack_food_') ,values_to='lacked_food' ) %>% 
+	mutate(month = factor(month, levels=str_to_lower(months))) %>% 
+	group_by(village, month) %>% 
+	summarise( lacked_food=sum(lacked_food)/nrow(df), .groups='drop' ) %>% 
+	mutate(village = factor(village, levels=rev(levels(village))))
+df_per_month
+```
+
+## Plots
+
+```{r food_plot}
+plot_food <- df_per_month %>% 
+	ggplot(aes(x=as.integer(month), y=lacked_food, fill=village, group=village)) +
+	geom_area(colour='white') +
+	scale_fill_manual(values=colour_map) +
+	theme(panel.grid = element_blank()) +
+	theme(legend.position='none') +
+	scale_x_continuous(breaks=1:12, labels=months) +
+	labs( y=element_blank(), x='Month', subtitle='A. Proportion of dwellings lacking food by month'
+	    , title='Examination of the Studying African Farmer-Led Irrigation (SAFI) Survey' )
+plot_food
+```
+```{r years_lived}
+plot_length <- df %>% 
+	ggplot(aes(x=years_liv, y=village, fill=village)) +
+	stat_halfeye(scale=0.5) +
+	scale_fill_manual(values=colour_map) +
+	theme(panel.grid.major.y = element_blank()) +
+	theme(legend.position='none') +
+	theme(axis.title.y=element_blank(), axis.text.y=element_blank()) +
+	labs(x='Years', subtitle='B. Years lived in dwelling')
+plot_length
+```
+
+
+```{r plot_size}
+plot_size_with_legend <- df %>% 
+	ggplot(aes(x=no_membrs, y=village, fill=village)) +
+	stat_halfeye(scale=0.5) +
+	scale_fill_manual(values=colour_map, name='Village') +
+	theme(panel.grid.major.y = element_blank()) +
+	theme(axis.title.y=element_blank(), axis.text.y=element_blank()) +
+	labs(x='Members', subtitle='C. Members in each dwelling')
+plot_size <- plot_size_with_legend +
+	theme(legend.position='none')
+plot_size
+```
+
+```{r combined_plots}
+plot_combined <- plot_food / ( plot_length | plot_size_with_legend ) +
+	plot_layout(guides='collect')
+ggsave('2023_wk24.pdf', plot=plot_combined, width=14, height=9)
+plot_combined
+```
+
