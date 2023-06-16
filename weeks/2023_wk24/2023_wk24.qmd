@@ -56,6 +56,19 @@ df <- data %>%
 
 colour_map = set_names(khroma::colour('highcontrast')(3), levels(df$village))
 ```
+### Aside
+
+I wasn't satisfied with my extraction of `;` separated fields, so I'll attempt a better way here
+```{r semicolumn_test}
+select( data, months_lack_food ) %>% 
+	mutate(id=1:n()) %>% 
+	rename(months=months_lack_food) %>% 
+	separate_longer_delim( months, ';' ) %>% 
+	mutate( present=T ) %>% 
+	pivot_wider( id_cols=id, names_from=months, values_from=present, values_fill=F ) %>% 
+	select( id, levels(months) )
+```
+Although in our case the `pivot_wider` isn't needed as we need the long form anyway.
 
 ## EDA
 
