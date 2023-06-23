@@ -1,0 +1,114 @@
+---
+title: "Tidy Tuesday 2023 Week 25: UFO Sightings"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+library(showtext)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=10, r=0, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=0, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=30, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  plot.margin = margin(rep( 20, 4 )) )
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+ufo_sightings <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-20/ufo_sightings.csv')
+places        <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-20/places.csv')
+day_parts_map <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-20/day_parts_map.csv')
+
+#colour_map = set_names(khroma::colour('highcontrast')(3), levels(df$village))
+```
+
+```{r eda}
+df_full  <- ufo_sightings %>% 
+	left_join(places, by=c('country_code','state','city')) %>% 
+	mutate(country=str_to_upper(country)) %>% 
+	filter(country == 'USA') %>% 
+	filter(!is.na(elevation_m))
+df <- df_full %>% 
+	group_by(state, city, elevation_m, population, latitude, longitude) %>% 
+	summarise(n=n(), total_time=sum(duration_seconds), .groups='drop')
+
+ggpairs(df, columns=c('n', 'elevation_m', 'total_time', 'population'))
+ggpairs(df, columns=c('n', 'total_time', 'population', 'latitude'))
+
+df %>% 
+	mutate( n_per_p=n/population ) %>% 
+	ggplot(aes(x=n_per_p, y=elevation_m)) +
+	geom_point()
+```
+
+## Plots
+
+```{r aliens_prefer_lower}
+df %>% 
+	mutate(n_per_p=n/population) %>% 
+	ggplot(aes(x=n_per_p, y=elevation_m)) +
+	geom_point(alpha=0.1)
+```
+
+```{r elevation_distribution}
+p_elevation <- df_full %>% 
+	ggplot(aes(y=elevation_m)) +
+	stat_halfeye(fill=khroma::colour('highcontrast')(3)['red']) +
+	theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+	theme(panel.grid.major.x = element_blank(), panel.grid.major.y = element_blank()) +
+	labs(y='elevation (m)')
+p_elevation
+```
+```{r map}
+library(ggpointdensity)
+
+df_map <- df %>% mutate(logn=log(n)) %>% filter(!state %in% c('AK', 'HI'))
+long_min <- min(df_map$longitude)
+long_max <- max(df_map$longitude)
+lat_min <- min(df_map$latitude)
+lat_max <- max(df_map$latitude)
+ratio <- (lat_max - lat_min) / (long_max - long_min)
+
+p_map <- ggplot(map_data('state'), aes(long, lat)) +
+	geom_polygon(aes(group = group), fill = "grey80", color = "white") +
+	geom_pointdensity( data = df_map
+	                 , aes(longitude, latitude), adjust=0.001, size=2, alpha=0.25 ) +
+	khroma::scale_colour_davos() +
+	theme_void() +
+	theme(legend.position='none')
+p_map
+```
+```{r combined}
+offset <- 14
+p_map + 
+	lims( x=c(long_min-offset, long_max), y=c(lat_min-ratio*offset, lat_max)) +
+	inset_element(p_elevation, left=0, right=0.6, top=1, bottom=0, align_to='full') +
+	plot_annotation(title='Most Popular Destinations', subtitle='Important: avoid visiting all other parts of the world')
+ggsave('2023_wk25.svg', width=14, height=9)
+```
+

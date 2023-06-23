@@ -13,6 +13,8 @@ dependencies:
   - r-ggthemes
   - r-patchwork
   - r-maps
+  - r-sf
+  - r-ggpointdensity
   - r-tidygeocoder
   - r-shape
   - r-showtext
