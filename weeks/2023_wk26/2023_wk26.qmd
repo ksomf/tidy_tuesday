@@ -1,0 +1,155 @@
+---
+title: "Tidy Tuesday 2023 Week 25: UFO Sightings"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+library(showtext)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=10, r=0, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=0, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=30, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  plot.margin = margin(rep( 20, 4 )) )
+```
+
+
+
+## Data Wrangling
+
+```{r loading_and_wrangling}
+historical_markers <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-04/historical_markers.csv')
+no_markers <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-04/no_markers.csv')
+
+num_g <- 20
+
+df <- historical_markers %>% 
+	mutate( erected_by_min=fct_lump_min(erected_by, 100)
+	      , erected_by_n  =fct_infreq(fct_lump_n  (erected_by, num_g ) ))
+
+colour_map = set_names(khroma::colour('discreterainbow')(num_g), levels(df$erected_by_n) %>% tail(n=-1))
+colour_map['Other'] = '#777777'
+df_top <- filter( df, erected_by_n != 'Other' )
+```
+
+```{r eda}
+historical_markers %>% 
+	ggplot(aes(x=year_erected)) +
+	stat_bin(binwidth=1, na.rm=T)
+
+table(df$erected_by_n) %>% sort(decreasing=T)
+```
+
+```{r wrangling}
+bar_width <- 1
+bar_max_height  <- 8
+
+states <- map_data('state') %>% 
+	group_by( region ) %>% 
+	summarise( long=mean(long), lat=mean(lat), .groups='drop' ) %>% 
+	mutate( region=str_to_lower(region) )
+states
+
+region2groups <- map_data('state') %>% 
+	select( region, group ) %>% 
+	distinct()
+
+df_top_state <- df %>% 
+	group_by( erected_by_n, state_or_prov ) %>% 
+	summarise( num=n(), .groups='drop' ) %>% 
+	mutate(state_or_prov=str_to_lower(state_or_prov)) %>% 
+	left_join( states, by=c(state_or_prov='region')) %>% 
+	group_by(state_or_prov) %>% 
+	group_modify(function(df, g){
+		df['x'] <- df$long+seq(-nrow(df)*bar_width/2, nrow(df)*bar_width/2, length.out=nrow(df))
+		df		
+	}) %>% 
+	ungroup()
+df_top_state <- df_top_state %>% 
+	mutate(top=lat + bar_max_height * num / max(num))
+	
+df_top_state
+
+states_with_no_top <- df_top_state %>% 
+	group_by(state_or_prov) %>% 
+	summarise(contains_non_other=any(erected_by_n != 'Other'))
+
+df_top_state_wo <- df_top_state %>% 
+	left_join(states_with_no_top, by='state_or_prov') %>% 
+	filter(contains_non_other) %>% 
+	mutate(top=lat + bar_max_height * num / max(num))
+
+df_top_state_wo_no <- df_top_state_wo %>% 
+	filter(erected_by_n != 'Other') %>% 
+	mutate(top=lat + bar_max_height * num / max(num))
+
+used_groups <- region2groups %>% 
+	filter(region %in% df_top_state_wo_no$state_or_prov) %>% 
+	pull(group)
+```
+
+
+## Plots
+
+```{r map1}
+library(ggpointdensity)
+m <- map_data('state')
+p_map <- ggplot(m, aes(long, lat)) +
+	geom_polygon(data=filter(m,  group %in% used_groups), aes(group = group), fill = "grey80", color = "white") +
+	geom_polygon(data=filter(m, !group %in% used_groups), aes(group = group), fill = "grey40", color = "white") +
+	geom_rect( data = df_top_state_wo_no
+	         , aes(xmin=x-0.5*bar_width, xmax=x+0.5*bar_width, ymin=lat, ymax=top, fill=erected_by_n), colour='white' ) +
+	scale_fill_manual(values=colour_map) +
+	theme_void() +
+	theme(legend.position='none')
+p_map
+
+```
+```{r histogram}
+p_histogram <- df %>% 
+	ggplot(aes(x=year_erected, fill=erected_by_n)) +
+	geom_histogram(binwidth=1)+
+	scale_fill_manual(values=colour_map) +
+	theme_minimal() +
+	theme(legend.text=element_text(size=rel(0.33))) +
+	theme(panel.grid=element_blank(), axis.title.y=element_blank(), axis.text.y=element_blank()) +
+	labs(x='Year Erected', fill='Organisation')
+p_histogram
+```
+
+
+
+```{r combined}
+layout <- "
+AAAAAA
+AAAAAA
+BBBBB#
+"
+p_map / p_histogram +
+	plot_annotation(title='Prolific Monument Enthusiasts', subtitle=paste0('The top ', num_g, ' monument erecting organisations')) +
+	plot_layout(design=layout, guides = 'keep')
+ggsave('2023_wk26.svg', width=14, height=14)
+```
+
