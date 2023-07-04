@@ -150,6 +150,6 @@ BBBBB#
 p_map / p_histogram +
 	plot_annotation(title='Prolific Monument Enthusiasts', subtitle=paste0('The top ', num_g, ' monument erecting organisations')) +
 	plot_layout(design=layout, guides = 'keep')
-ggsave('2023_wk26.svg', width=14, height=14)
+ggsave('2023_wk27.svg', width=14, height=14)
 ```
 
