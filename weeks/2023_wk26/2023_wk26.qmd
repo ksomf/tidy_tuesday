@@ -1,0 +1,296 @@
+---
+title: "Tidy Tuesday 2023 Week 26: US Place Names"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+library(showtext)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=10, r=0, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=0, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=30, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  plot.margin = margin(rep( 20, 4 )) )
+
+LERP <- function( a, b, x ){
+	a + (b-a)*x
+}
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+us_place_names   <- readr::read_csv( 'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-27/us_place_names.csv'  , show_col_types=F )
+us_place_history <- readr::read_csv( 'https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-06-27/us_place_history.csv', show_col_types=F )
+
+glimpse(us_place_names)
+glimpse(us_place_history)
+```
+
+```{r wrangling}
+n_places  <- 6
+n_nearest <- 3
+
+chosen_places <- us_place_names$feature_name %>% table() %>% sort(decreasing=T) %>% .[1:n_places]
+
+df <- us_place_names %>% 
+	filter(feature_name %in% names(chosen_places)) %>% 
+	mutate(feature_name=fct_infreq(feature_name)) %>% 
+	rename( lat=prim_lat_dec, lon=prim_long_dec ) %>% 
+	select(feature_name, lon, lat) %>% 
+	filter(complete.cases(.))
+df$id <- 1:nrow(df)
+
+chosen_places <- levels(df$feature_name)
+
+df_connections <- df %>% 
+	group_by(feature_name) %>% 
+	group_modify(function( df, g ){
+		map_dfr( 1:nrow(df), function(i){
+			df %>% 
+				mutate( src_lon=df$lon[i], src_lat=df$lat[i] ) %>% 
+				mutate(dist=geosphere::distHaversine( c( df$lon[i], df$lat[i] ), select( df, lon, lat ) )) %>% 
+				filter(dist != 0) %>% 
+				slice_min( dist, n=n_nearest ) %>% 
+				rename( dest_lon=lon, dest_lat=lat )
+		})
+	})
+```
+
+### Map Data Download
+
+```{r usa_map_download}
+#glcc_url  <- 'http://iridl.ldeo.columbia.edu/SOURCES/.UMD/.GLCF/.GLCDS/.lc/data.nc'
+
+library(sf)
+library(terra)
+library(tidyterra)
+library(rnaturalearth)
+library(ggspatial)
+library(ggshadow)
+
+low_res_file       <- '../../data/maps/blue_marble_8km.jpg'
+low_res_url        <- 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg'
+low_res_resolution <- 1 / 15
+if(!file.exists(low_res_file)){
+	dir.create( dirname(low_res_file), showWarnings=F, recursive=T )
+	download.file( low_res_url, low_res_file )
+}
+hreso <- low_res_resolution / 2
+
+mid_res_file       <- '../../data/maps/blue_marble_2km.jpg'
+mid_res_url        <- 'https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x21600x10800.jpg'
+mid_res_resolution <- 1 / 60
+if(!file.exists(mid_res_file)){
+	dir.create( dirname(mid_res_file), showWarnings=F, recursive=T )
+	download.file( mid_res_url, mid_res_file )
+}
+hreso <- mid_res_resolution / 2
+
+
+usa_mainland_boundaries <- maps::map( database='usa', plot=F )
+usa_boundaries <- ne_states   ( country='United States of America'          , returnclass='sf' )
+usa_edge       <- ne_countries( country='United States of America', scale=10, returnclass='sf' )
+```
+```{r rastering}
+r      <- rast(mid_res_file)
+ext(r) <- c( -180+hreso, 180-hreso, -90+hreso, 90-hreso )
+crs(r) <- 'epsg:4326'
+
+extension <- 0.1
+r_extent <- set_names( usa_mainland_boundaries$range, c( 'xmin', 'xmax', 'ymin', 'ymax' ) )
+r_extent['xmin'] <- LERP( r_extent['xmax'], r_extent['xmin'], 1 + extension )
+r_extent['xmax'] <- LERP( r_extent['xmin'], r_extent['xmax'], 1 + extension )
+r_extent['ymin'] <- LERP( r_extent['ymax'], r_extent['ymin'], 1 + extension )
+r_extent['ymax'] <- LERP( r_extent['ymin'], r_extent['ymax'], 1 + extension )
+
+r_usa    <- crop( r, r_extent )
+
+r_usa_desat <- colorize( r_usa, to='hsl' )
+r_usa_desat[[2]] <- .05 # proportion saturated
+set.RGB( r_usa_desat, 1:3, 'hsl' )
+r_usa_desat <- colorize( r_usa_desat, to='rgb' )
+
+print(crs(r))
+print(crs(usa_boundaries))
+```
+
+```{r map_plot}
+library(gganimate)
+library(gifski)
+
+target_epsg <- 4326
+aspect_ratio <- (r_extent['xmax'] - r_extent['xmin']) / (r_extent['ymax'] - r_extent['ymin'])
+
+colour_map <- khroma::colour('bright')(n_places) %>% 
+	set_names(chosen_places)
+colour_map['muted']    <- '#777777'
+colour_map['title']    <- '#ffffff'
+colour_map['subtitle'] <- '#888888'
+
+#df_animated <- map2_dfr( 1, chosen_places[1], ~mutate( df, animate_feature=.x, colour=ifelse(feature_name==.y, .y, 'muted'), alpha=ifelse(feature_name==.y, 1, 0.2) ) )
+df_animated <- map2_dfr( 1:n_places, chosen_places, ~mutate( df, animate_feature=.x, colour=ifelse(feature_name==.y, .y, 'muted'), alpha=ifelse(feature_name==.y, 1, 0.2) ) )
+#df_connections_animated <- map2_dfr( 1, chosen_places[1], ~mutate( df_connections, animate_feature=.x, colour=ifelse(feature_name==.y, .y, 'muted'), alpha=ifelse(feature_name==.y, 1, 0.005))) %>% 
+df_connections_animated <- map2_dfr( 1:n_places, chosen_places, ~mutate( df_connections, animate_feature=.x, colour=ifelse(feature_name==.y, .y, 'muted'), alpha=ifelse(feature_name==.y, 1, 0.005))) %>% 
+	mutate(id=paste0('e',id)) %>% 
+	filter(colour != 'muted')
+
+n_subdiv <- 50
+df_lines_animated <- map_dfr( 1:nrow(df_connections_animated), function(i){
+	lon_start <- df_connections_animated$src_lon[i]
+	lon_end   <- df_connections_animated$dest_lon[i]
+	lat_start <- df_connections_animated$src_lat[i]
+	lat_end   <- df_connections_animated$dest_lat[i]
+	
+	line <- geosphere::gcIntermediate(c(lon_start,lat_start), c(lon_end,lat_end), n=n_subdiv, addStartEnd=T, breakAtDateLine=F) %>% 
+		as.data.frame()
+	
+	if(abs(lon_end-lon_start) > 180){ #Passing the dateline
+		line_right  <- filter(line, line$lon >= 0)
+		line_left   <- filter(line, line$lon  < 0)
+		res_right <- df_connections_animated[i,] %>% mutate(group=glue::glue('l{i}_right'), geom=list(st_linestring(as.matrix(line_right))))
+		res_left  <- df_connections_animated[i,] %>% mutate(group=glue::glue('l{i}_left') , geom=list(st_linestring(as.matrix(line_left ))))
+		res <- rbind(res_left, res_right)
+	}else{
+		res <- df_connections_animated[i,] %>% mutate(group=glue::glue('l{i}'), geom=list(st_linestring(as.matrix(line))))
+	}
+	res
+})
+df_lines_animated <- st_sf(df_lines_animated, crs=4326)
+
+label_dy <- 1.5*1.1
+df_labels <- data.frame(names=chosen_places) %>% 
+	mutate(i=1:n()) %>% 
+	mutate(lon=LERP( r_extent['xmin'], r_extent['xmax'], 0.93 ) ) %>% 
+	mutate(lat=LERP( r_extent['ymin'], r_extent['ymax'], 0.20 ) + label_dy*(i-1) ) %>% 
+	mutate(id=paste0('l',i)) %>% 
+	mutate(lat=rev(lat))
+df_labels_animated <- map2_dfr( 1:n_places, chosen_places, ~mutate( df_labels, animate_feature=.x,  colour=ifelse(names==.y, .y, 'muted'), alpha=ifelse(names==.y, 1, 0.5) ))
+
+df_title    <- data.frame( label  = 'US Name-neighbours'
+                         , lon    = LERP( r_extent['xmin'], r_extent['xmax'], 0.035 )
+                         , lat    = LERP( r_extent['ymin'], r_extent['ymax'], 0.13 ) )
+df_subtitle <- data.frame( label  = glue::glue('The {n_nearest} closest neighbours of the {n_places} most popular place names')
+                         , lon    = LERP( r_extent['xmin'], r_extent['xmax'], 0.035 )
+                         , lat    = LERP( r_extent['ymin'], r_extent['ymax'], 0.07 ) )
+df_caption  <- data.frame( label  = '#tidytuesday | nasa.gov'
+                         , lon    = LERP( r_extent['xmin'], r_extent['xmax'], 0.995 )
+                         , lat    = LERP( r_extent['ymin'], r_extent['ymax'], 0.01 ) )
+
+width=14
+height=7.415
+
+p <- ggplot() +
+	geom_spatraster_rgb(data=r_usa_desat) +
+	geom_sf( data=usa_boundaries, fill=NA, size=03, colour='#888888' ) +
+	geom_sf( data=usa_edge      , fill=NA, size=24, colour='black' ) +
+	geom_sf( data=usa_edge      , fill=NA, size=12, colour='white' ) +
+	#geom_spatial_segment( data=df_connections_animated, aes( x=src_lon, y=src_lat, xend=dest_lon, yend=dest_lat, colour=colour, alpha=alpha, group=id ), linewidth=rel(0.25), crs=target_epsg ) +
+	geom_sf( data=df_lines_animated, aes(colour=colour, alpha=alpha), size=2/3 ) +
+	geom_spatial_point  ( data=df_animated            , aes( x=lon    , y=lat                                  , colour=colour, alpha=alpha, group=id ), size=rel(2), crs=target_epsg ) +
+	geom_spatial_text( data=df_labels_animated, aes( x=lon, y=lat, label=names, colour=colour, alpha=alpha, group=id ), size=7, crs=target_epsg ) +
+	geom_spatial_text( data=df_title   , aes( x=lon, y=lat, label=label), size=12, colour='#ffffff', family=font_family, fontface='bold'       , hjust=0, vjust=0.5,  crs=target_epsg ) +
+	geom_spatial_text( data=df_subtitle, aes( x=lon, y=lat, label=label), size=7 , colour='#aaaaaa', family=font_family, fontface='bold.italic', hjust=0, vjust=0.5,  crs=target_epsg ) +
+	geom_spatial_text( data=df_caption , aes( x=lon, y=lat, label=label), size=4 , colour='#aaaaaa', family=font_family, fontface='plain'      , hjust=1, vjust=0,  crs=target_epsg ) +
+	coord_sf( xlim=r_extent[c('xmin','xmax')], ylim=r_extent[c('ymin','ymax')], crs=target_epsg, expand=F, clip='off' ) +
+	theme_void() +
+	theme(legend.position='none') +
+	scale_color_manual(values=colour_map)
+ggsave( '2023_wk26.png', p, width=width, height=height )
+
+anim <- p +
+	transition_states( animate_feature, transition_length=1/3, state_length=1/2 ) +
+	enter_fade() +
+	exit_fade() +
+	ease_aes('sine-in-out')
+#%>% 
+#	animate( width=14, height=14*aspec_ratio, units="in", res=50, renderer=gifski_renderer("gganim.gif") )
+anim_save( "2023_wk26.gif", anim, width=width, height=height, units="in", res=100 )
+```
+
+## Testing Grounds
+```{r test_animate}
+library(sf)
+library(gganimate)
+library(ggspatial)
+library(tidyverse)
+
+cities <- data.frame(
+  lon  = c(-63.58595, 116.41214, 13.50, -149.75),
+  lat  = c(44.64862, 40.19063, 52.51, 61.20),
+  city = c("Halifax", "Beijing", "Berlin", "Anchorage"),
+  id   = 1:4,
+  ani  = c(1,1,2,2)
+)
+cities$lon_end <- cities$lon [c(4, 3, 1, 2)]
+cities$lat_end <- cities$lat [c(4, 3, 1, 2)]
+cities$city_to <- cities$city[c(4, 3, 1, 2)]
+
+cities <- map_dfr( 1:nrow(cities),	function(i){
+	lon_start <- cities$lon[i]
+	lon_end   <- cities$lon_end[i]
+	lat_start <- cities$lat[i]
+	lat_end   <- cities$lat_end[i]
+	
+	line <- geosphere::gcIntermediate(c(lon_start,lat_start), c(lon_end,lat_end), n=5, addStartEnd=T, breakAtDateLine=F) %>% 
+		as.data.frame()
+	
+	if(abs(lon_end - lon_start) > 180){ #Passing the dateline
+		line_right  <- filter(line, line$lon >= 0)
+		line_left   <- filter(line, line$lon  < 0)
+		res_right <- cities[i,] %>% mutate(group=glue::glue('l{i}_right'), geom=list(st_linestring(as.matrix(line_right))))
+		res_left  <- cities[i,] %>% mutate(group=glue::glue('l{i}_left') , geom=list(st_linestring(as.matrix(line_left ))))
+		res <- rbind(res_left, res_right)
+	}else{
+		res <- cities[i,] %>% mutate(group=glue::glue('l{i}'), geom=list(st_linestring(as.matrix(line))))
+	}
+	res
+})
+#xs <- map( 1:nrow(cities), ~st_linestring(matrix(c(cities$lon[.x], cities$lon_end[.x], cities$lat[.x], cities$lat_end[.x]), 2)), crs=4326) %>% 
+#	st_sfc(crs=4326)
+#ci <- st_sf(cities, xs)
+ci <- st_sf(cities, crs=4326)
+
+p <- ggplot(cities, aes(lon, lat, xend = lon_end, yend = lat_end, group=id)) +
+	geom_spatial_point() +
+	geom_sf(data=ci, aes(colour=city)) +
+	coord_sf(crs = 4326)
+p + transition_states( ani, transition_length=1/5, state_length=1/2 )
+
+
+#p
+#ggplot(cities, aes(lon, lat, xend = lon_end, yend = lat_end, group=id)) +
+#	geom_spatial_point() +
+#	geom_spatial_segment() +
+#	coord_sf(crs = 4326)
+```
+```{r}
+
+
+```
+
+

@@ -2,8 +2,11 @@ name: tidy_tuesday
 channels:
   - conda-forge
 dependencies:
+# Base R
   - r
+  - r-devtools
   - r-tidyverse
+# Plotting
   - r-ggally
   - r-ggdist
   - r-ggforce
@@ -12,10 +15,21 @@ dependencies:
   - r-ggrepel
   - r-ggthemes
   - r-patchwork
-  - r-maps
-  - r-sf
-  - r-ggpointdensity
-  - r-tidygeocoder
-  - r-shape
   - r-showtext
   - r-svglite
+  - r-ggblend
+  - r-ggbump
+  - r-ggspatial
+  - r-ggpointdensity
+  - r-shape
+  - r-gganimate=1.0.7 #Version that work with gganimate with specified transformr version
+  - r-gifski
+# Maps
+  - r-maps
+  - r-sf
+  - r-terra
+  - r-ncdf4
+  - r-rnaturalearth
+  - r-geosphere
+  - r-lwgeom
+  - r-transformr=0.1.3 #Version that work with gganimate with specified gganimate version
