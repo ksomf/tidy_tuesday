@@ -1,0 +1,137 @@
+---
+title: "Tidy Tuesday 2023 Week 27: US Monuments"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(patchwork)
+library(showtext)
+library(khroma)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=0 , r=5, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=5, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=10, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  plot.margin = margin(rep( 10, 4 )) )
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+global_temps <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-11/global_temps.csv')
+nh_temps <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-11/nh_temps.csv')
+sh_temps <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-11/sh_temps.csv')
+zonann_temps <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-11/zonann_temps.csv')
+```
+
+```{r wrangling}
+df_global_months = global_temps %>% 
+	select(Year, Jan:Dec) %>% 
+	pivot_longer(!Year, names_to='month', values_to='drift') %>% 
+	rename(year='Year') %>% 
+	mutate(month=fct_inorder(month))
+
+df_nh_months = nh_temps %>% 
+	select(Year, Jan:Dec) %>% 
+	pivot_longer(!Year, names_to='month', values_to='drift') %>% 
+	rename(year='Year') %>% 
+	mutate(month=fct_inorder(month))
+
+df_sh_months = nh_temps %>% 
+	select(Year, Jan:Dec) %>% 
+	pivot_longer(!Year, names_to='month', values_to='drift') %>% 
+	rename(year='Year') %>% 
+	mutate(month=fct_inorder(month))
+
+df_months = bind_rows(list(global=df_global_months, nh=df_nh_months, sh=df_sh_months), .id='hemishpere')
+df_months
+
+df_nh_seasons = nh_temps %>% 
+	select(Year, DJF:SON) %>% 
+	pivot_longer(!Year, names_to='season', values_to='drift') %>% 
+	rename(year='Year') %>% 
+	mutate(season=fct_recode(season, winter='DJF', spring='MAM', summer='JJA', autumn='SON'))
+
+df_sh_seasons = sh_temps %>% 
+	select(Year, DJF:SON) %>% 
+	pivot_longer(!Year, names_to='season', values_to='drift') %>% 
+	rename(year='Year') %>% 
+	mutate(season=fct_recode(season, summer='DJF', autumn='MAM', winter='JJA', spring='SON'))
+df_seasons = bind_rows(list(nh=df_nh_seasons, sh=df_sh_seasons), .id='hemishpere')
+df_seasons
+```
+
+```{r eda}
+branch_cut = df_months %>% 
+	filter(month == 'Jan') %>% 
+	mutate(year=year - 1, month=NA) #NA becomes the last month, then branch cut NA and Jan
+df_months_polar = rbind(df_months, branch_cut)
+
+df_months_polar %>%
+	filter(hemishpere=='global') %>% 
+	ggplot(aes(x=month, y=drift, group=year, colour=year)) +
+	geom_line(alpha=1/3) +
+	coord_polar(clip='off') +
+	scale_x_discrete(expand=c(0,0), breaks=month.abb) +
+	scale_colour_smoothrainbow()
+
+df_seasons %>% 
+	ggplot(aes(x=year, y=drift)) +
+	geom_line() +
+	facet_grid(rows=vars(season), cols=vars(hemishpere))
+```
+
+## Plot
+```{r}
+min_year <- min(df_months$year)
+max_year <- max(df_months$year)
+
+df_months %>% 
+	mutate(year = year + (as.integer(month)-1)/12) %>% 
+	filter(hemishpere == 'global' & !is.na(drift)) %>% 
+	ggplot(aes( x=year, y=drift, colour=drift )) +
+	geom_hline( yintercept=0, colour='#FFFFFF', linetype='dashed' ) +
+	geom_line() +
+	scale_colour_sunset() +
+	scale_x_continuous(breaks=seq( min_year, max_year, by=20 )) +
+	coord_cartesian(clip = 'off') +
+	theme(legend.position='none') +
+	theme( plot.background = element_rect(fill='#444444')
+	     , panel.grid.major = element_line( colour='#555555', linewidth=rel(0.5) )
+	     , axis.title    = element_text(colour='#EAECCC')
+	     , plot.title    = element_text(colour='#EAECCC')
+	     , plot.subtitle = element_text(colour='#AAAAAA')
+	     , plot.caption  = element_text(colour='#AAAAAA')
+	     , axis.title.x  = element_blank()
+	     , axis.text     = element_text(colour='#EAECCC') ) +
+	labs( y='Temperature Deviation (°C)'
+	    , title='Global Average Temperature Deviation'
+	    , subtitle=glue::glue('Monthly average surface temperatures collected between {min_year} and {max_year}')
+	    , caption='NASA GISS Surface Temperature Analysis | #TidyTuesday | github.com/ksomf' )
+
+ggsave( '2023_wk28.png', width=14*2/3, height=9*2/3 )
+```
+
