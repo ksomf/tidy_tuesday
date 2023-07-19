@@ -29,9 +29,10 @@ showtext_auto()
 
 theme_set(theme_minimal( base_size = 15, base_family = font_family ))
 theme_update( panel.grid.minor = element_blank()
-            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=0 , r=5, b=0, l=0 )                  )
-            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=5, b=10, l=0 )                  )
-            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=10, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  text = element_text(family=font_family)
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , face='bold'       , margin=margin( t=0 , r=5, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', face='bold.italic', margin=margin( t=0 , r=5, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , face='plain'      , margin=margin( t=10, r=0, b=0 , l=0 ), lineheight=2.05 )
             ,  plot.title.position   = 'plot'
             ,  plot.caption.position = 'plot'
             ,  axis.title = element_text(family=font_family)
@@ -88,9 +89,33 @@ df_prop <- df %>%
 	mutate(prop = n / sum(n)) %>% 
 	mutate(prop_label=paste0(round(prop*100, 1), '%')) %>% 
 	mutate(prop_true= ifelse(class %in% c('True Positive', 'True Negative'), prop, 0)) %>% 
-	mutate(prop_true=sum(prop_true)) %>% 
+	mutate(prop_true=sum(prop_true))
+
+
+df_contrast <- df %>% 
+	filter( native %in% c('Yes', 'No') ) %>% 
+	count(detector, class, native) %>% 
+	arrange(native) %>% 
+	group_by(detector, native) %>% 
+	mutate(prop = n / sum(n)) %>% 
+	filter(class == 'True Positive') %>% 
+	select(-class, -n) %>% 
 	ungroup() %>% 
-	mutate(detector = fct_reorder( detector, prop_true, .desc=F ))
+	mutate(native=ifelse( native == 'Yes', 'native', 'non_native' )) %>% 
+	pivot_wider(id_cols=detector, names_from=native, values_from=prop) %>% 
+	mutate(contrast=round((non_native - native)*100, 1))
+
+order_combined <- fct_reorder( df_prop    $detector, df_prop$prop_true                          , .desc=F ) %>% levels()
+order_drop     <- fct_reorder( df_contrast$detector, df_contrast$contrast                       , .desc=T ) %>% levels()
+order_median   <- fct_reorder( df_contrast$detector, (df_contrast$non_native+df_contrast$native), .desc=T ) %>% levels()
+
+detector_order <- order_median
+
+df         $detector <- fct(as.character(df         $detector), levels=detector_order)
+df_prop    $detector <- fct(as.character(df_prop    $detector), levels=detector_order)
+df_contrast$detector <- fct(as.character(df_contrast$detector), levels=detector_order)
+
+bestworst_detector <- last(order_combined)
 
 df %>% 
 	group_by(document_id) %>% 
@@ -100,28 +125,48 @@ df %>%
 
 ## Plot
 ```{r}
-colour_scheme <- khroma::colour('vibrant')(7)
-colour_map <- c( 'True Positive'  = colour_scheme[['blue']]
-               , 'True Negative'  = colour_scheme[['cyan']]
-               , 'False Positive' = colour_scheme[['red']]
-               , 'False Negative' = colour_scheme[['orange']] )
+colour_scheme1 <- khroma::colour('vibrant')(7)
+colour_map <- c( 'True Positive'  = colour_scheme1[['blue']]
+               , 'True Negative'  = colour_scheme1[['cyan']]
+               , 'False Positive' = colour_scheme1[['red']]
+               , 'False Negative' = colour_scheme1[['orange']]
+               , 'Non Native'     = colour_scheme1[['magenta']]
+               , 'Native'         = colour_scheme1[['teal']] )
 
-df_prop %>% 
+p_contrast <- df_contrast %>% 
+	ggplot(aes(x=native, xend=non_native, y=detector, yend=detector)) +
+	geom_segment(alpha=.5) +
+	geom_point(aes(x=native    , colour='Native'    ), size=3) +
+	geom_point(aes(x=non_native, colour='Non Native'), size=3) +
+	scale_color_manual(values=colour_map) +
+	scale_x_continuous(limits=c(0,1), labels=scales::percent) +
+	theme( axis.title.y=element_blank(), axis.text.y=element_blank() ) +
+	theme(legend.position='bottom') +
+	coord_cartesian(clip='off') +
+	guides(colour=guide_legend( title=element_blank(), reverse=T )) +
+	labs( subtitle='True Negatives Rates for Non-native and Native Speakers'
+	    , x='True Negative Rate (%)'  )
+
+p_prop <- df_prop %>% 
 	ggplot(aes(x=detector, y=prop, label=prop_label, fill=class)) +
 	geom_bar(stat='identity') +
 	geom_text(position=position_stack(vjust=0.5), colour='white') +
 	scale_fill_manual(values=colour_map) +
 	coord_flip(clip='off') +
-	theme( axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.x=element_blank(), panel.grid=element_blank() ) +
-	theme( axis.text.y=element_text(family=font_family, hjust=0.5, face='bold') ) +
-	theme(legend.position = 'bottom') +
-	guides(fill=guide_legend( nrow=1, byrow=T, title=element_blank(), reverse=T, label.theme=element_text(family=font_family) )) +
-	theme(plot.background=element_rect(fill='white')) +
-	labs( title    = 'AI Detection Rates by Model'
-	    , subtitle = 'Can we detect AI model output?'
-	    , caption  = '{detectors} | #TidyTuesday | github.com/ksomf' ) +
-	ylim(0,1)
-	
-ggsave( '2023_wk29.png', width=14*2/3, height=9*2/3 )
+	theme( axis.title.x=element_blank(), axis.text.x=element_blank(), panel.grid.major.x=element_blank() ) +
+	theme( axis.title.y=element_blank(), axis.text.y=element_text(family=font_family, hjust=0.5, face='bold', margin=margin(r=15)) ) +
+	theme( legend.position='bottom', plot.title.position='panel' ) +
+	guides(fill=guide_legend( title=element_blank(), reverse=T )) +
+	#guides(fill=guide_legend( nrow=1, byrow=T, title=element_blank(), reverse=T, label.theme=element_text(family=font_family) ))
+	#theme(plot.background=element_rect(fill='white')) +
+	labs( subtitle='AI Detection Rates (%)' )
+		
+(p_contrast | p_prop) +
+	plot_annotation( title   = 'False AI Identificatin of Non-native English Speakers'
+	               , subtitle = glue::glue('The best overall AI detector: {bestworst_detector} has the worst drop in performance with non-native speakers.')
+	               , caption = '{detectors} | #TidyTuesday | github.com/ksomf' ) +
+	theme(plot.background=element_rect(fill='white', colour=NA)) +
+	theme(plot.caption=element_text( hjust=0 ) )
+ggsave( '2023_wk29.png', width=1.5*14*2/3, height=9*2/3 )
 ```
 

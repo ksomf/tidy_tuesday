@@ -4,6 +4,10 @@ My contributions to the #TidyTuesday, a weekly challenge to improve ones data wr
 
 ## Weeks
 
+### [2023 Week 29: Non-Native English Speaker Misclassification](https://github.com/ksomf/tidy_tuesday/tree/main/weeks/2023_wk28)
+
+![./main/weeks/2023_wk28/2023_wk28.png](https://raw.githubusercontent.com/ksomf/tidy_tuesday/main/weeks/2023_wk28/2023_wk28.svg)
+
 ### [2023 Week 28: Global Surface Temperature](https://github.com/ksomf/tidy_tuesday/tree/main/weeks/2023_wk28)
 
 ![./main/weeks/2023_wk28/2023_wk28.png](https://raw.githubusercontent.com/ksomf/tidy_tuesday/main/weeks/2023_wk28/2023_wk28.png)
