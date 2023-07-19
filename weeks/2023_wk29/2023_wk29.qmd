@@ -1,0 +1,127 @@
+---
+title: "Tidy Tuesday 2023 Week 29: Chat GPT Detectors"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(GGally)
+library(ggdist)
+library(ggtext)
+library(inspectdf)
+library(patchwork)
+library(showtext)
+library(khroma)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size = 15, base_family = font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , family=font_family, face='bold'       , margin=margin( t=0 , r=5, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', family=font_family, face='bold.italic', margin=margin( t=0 , r=5, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , family=font_family, face='plain'      , margin=margin( t=10, r=0, b=0 , l=0 ), lineheight=2.05 )
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  axis.title = element_text(family=font_family)
+            ,  plot.margin = margin(rep( 10, 4 )) )
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+detectors <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-18/detectors.csv')
+```
+
+```{r eda}
+inspect_na(detectors)
+inspect_cor(detectors)
+inspect_imb(detectors)
+inspect_num(detectors)
+inspect_cat(detectors)
+
+detectors$.pred_class %>% table
+detectors$model %>% table
+detectors$detector %>% table
+detectors %>% 
+	group_by(document_id) %>% 
+	summarise(n=n()) %>% 
+	ggplot(aes(x=n)) +
+	geom_histogram(binwidth=1)
+detectors %>% 
+	group_by(document_id) %>% 
+	filter(n() > 10) %>% 
+	arrange(document_id, detector)
+```
+
+
+```{r wrangling}
+df <- detectors %>% 
+	mutate( kind        = fct_inorder(kind)
+	      , .pred_class = fct_inorder(.pred_class)
+	      , detector    = fct_infreq(detector) ) %>% 
+	distinct() %>% 
+	rename( pred_ai=.pred_AI, pred_class=.pred_class ) %>% 
+	mutate( class=case_when(
+	    kind == 'Human' & pred_class == 'Human' ~ 'True Positive'
+	,   kind == 'AI'    & pred_class == 'Human' ~ 'False Negative'
+	,   kind == 'Human' & pred_class == 'AI'    ~ 'False Positive'
+	,   kind == 'AI'    & pred_class == 'AI'    ~ 'True Negative'
+	))
+
+df_prop <- df %>% 
+	count( detector, class ) %>% 
+	group_by(detector) %>% 
+	mutate(prop = n / sum(n)) %>% 
+	mutate(prop_label=paste0(round(prop*100, 1), '%')) %>% 
+	mutate(prop_true= ifelse(class %in% c('True Positive', 'True Negative'), prop, 0)) %>% 
+	mutate(prop_true=sum(prop_true)) %>% 
+	ungroup() %>% 
+	mutate(detector = fct_reorder( detector, prop_true, .desc=F ))
+
+df %>% 
+	group_by(document_id) %>% 
+	filter(n() > 7) %>% 
+	arrange(document_id, detector)
+```
+
+## Plot
+```{r}
+colour_scheme <- khroma::colour('vibrant')(7)
+colour_map <- c( 'True Positive'  = colour_scheme[['blue']]
+               , 'True Negative'  = colour_scheme[['cyan']]
+               , 'False Positive' = colour_scheme[['red']]
+               , 'False Negative' = colour_scheme[['orange']] )
+
+df_prop %>% 
+	ggplot(aes(x=detector, y=prop, label=prop_label, fill=class)) +
+	geom_bar(stat='identity') +
+	geom_text(position=position_stack(vjust=0.5), colour='white') +
+	scale_fill_manual(values=colour_map) +
+	coord_flip(clip='off') +
+	theme( axis.title.y=element_blank(), axis.title.x=element_blank(), axis.text.x=element_blank(), panel.grid=element_blank() ) +
+	theme( axis.text.y=element_text(family=font_family, hjust=0.5, face='bold') ) +
+	theme(legend.position = 'bottom') +
+	guides(fill=guide_legend( nrow=1, byrow=T, title=element_blank(), reverse=T, label.theme=element_text(family=font_family) )) +
+	theme(plot.background=element_rect(fill='white')) +
+	labs( title    = 'AI Detection Rates by Model'
+	    , subtitle = 'Can we detect AI model output?'
+	    , caption  = '{detectors} | #TidyTuesday | github.com/ksomf' ) +
+	ylim(0,1)
+	
+ggsave( '2023_wk29.png', width=14*2/3, height=9*2/3 )
+```
+

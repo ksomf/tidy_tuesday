@@ -6,6 +6,7 @@ dependencies:
   - r
   - r-devtools
   - r-tidyverse
+  - r-inspectdf
 # Plotting
   - r-ggally
   - r-ggdist
