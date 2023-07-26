@@ -4,6 +4,10 @@ My contributions to the #TidyTuesday, a weekly challenge to improve ones data wr
 
 ## Weeks
 
+### [2023 Week 30: Scurvy Treatment](https://github.com/ksomf/tidy_tuesday/tree/main/weeks/2023_wk30)
+
+![./main/weeks/2023_wk30/2023_wk30.png](https://raw.githubusercontent.com/ksomf/tidy_tuesday/main/weeks/2023_wk30/2023_wk30.png)
+
 ### [2023 Week 29: Non-Native English Speaker Misclassification](https://github.com/ksomf/tidy_tuesday/tree/main/weeks/2023_wk29)
 
 ![./main/weeks/2023_wk29/2023_wk29.png](https://raw.githubusercontent.com/ksomf/tidy_tuesday/main/weeks/2023_wk29/2023_wk29.png)
