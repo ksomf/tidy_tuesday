@@ -145,9 +145,9 @@ p_contrast <- df_contrast %>%
 	coord_cartesian(clip='off') +
 	guides(colour=guide_legend( title=element_blank(), reverse=T )) +
 	labs( subtitle='True Negatives Rates for Non-native and Native Speakers'
-	    , x='True Negative Rate (%)'  )
+	    , x='True Negative vs False Positive Rate (%)'  )
 
-p_prop <- df_prop %>% 
+p_prop <- df_prop_negative %>% 
 	ggplot(aes(x=detector, y=prop, label=prop_label, fill=class)) +
 	geom_bar(stat='identity') +
 	geom_text(position=position_stack(vjust=0.5), colour='white') +
