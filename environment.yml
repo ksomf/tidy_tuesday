@@ -12,6 +12,7 @@ dependencies:
   - r-ggdist
   - r-ggforce
   - r-ggbreak
+  - r-ggbump
   - r-ggtext
   - r-ggrepel
   - r-ggthemes

@@ -1,0 +1,170 @@
+---
+title: "Tidy Tuesday 2023 Week 30: Scurvy RCT"
+format: html
+---
+
+```{r setup}
+library(tidyverse)
+library(ggtext)
+library(patchwork)
+library(showtext)
+library(ggbump)
+library(khroma)
+
+# Based on https://github.com/z3tt/TidyTuesday/blob/main/R/2020_31_PalmerPenguins.Rmd
+font_family <- 'Inter' # Alt: 'Lato', 'EB Garamond'; sysfonts::font.files() %>% pull(family) %>% unique()
+base_fontsize <- 15
+if(nrow(sysfonts::font_files() %>% filter(family == font_family))){
+	font_add( font_family
+	        , regular    = paste0( font_family, '-Regular.otf'    )
+	        , bold       = paste0( font_family, '-Bold.otf'       )
+	        , italic     = paste0( font_family, '-Italic.otf'     )
+	        , bolditalic = paste0( font_family, '-BoldItalic.otf' ) )
+}else{
+	font_add_google(font_family) #Note(Kim): Inter has no italic version
+}
+showtext_opts(dpi=300)
+showtext_auto()
+
+theme_set(theme_minimal( base_size=base_fontsize, base_family=font_family ))
+theme_update( panel.grid.minor = element_blank()
+            ,  text = element_text(family=font_family)
+            ,  plot.title    = element_text( hjust=0, size=21, colour='black' , face='bold'       , margin=margin( t=0 , r=5, b=0, l=0 )                  )
+            ,  plot.subtitle = element_text( hjust=0, size=14, colour='grey60', face='bold.italic', margin=margin( t=0 , r=5, b=10, l=0 )                  )
+            ,  plot.caption  = element_text( hjust=1, size=10, colour='black' , face='plain'      , margin=margin( t=10, r=0, b=0 , l=0 ), lineheight=2.05, vjust=0 )
+            ,  strip.text    = element_text(          size=14, colour='black' , face='plain')
+            ,  plot.title.position   = 'plot'
+            ,  plot.caption.position = 'plot'
+            ,  axis.title = element_text(family=font_family)
+            ,  plot.margin = margin(rep( 10, 4 )) )
+
+# Dark Theme
+theme_update( plot.background = element_rect(fill='#333333')
+            , plot.title      = element_text(colour='white')
+            , plot.subtitle   = element_text(colour='#AAAAAA')
+            , plot.caption    = element_text(colour='#AAAAAA')
+            , strip.text      = element_text(colour='#AAAAAA') )
+```
+
+
+
+## Data Wrangling
+
+```{r loading}
+scurvy <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2023/2023-07-25/scurvy.csv')
+```
+```{r wrangling}
+df <- scurvy %>% 
+	mutate(across(gum_rot_d6:lassitude_d6, ~fct( .x, levels=c( '0_none', '1_mild', '2_moderate', '3_severe' )))) %>% 
+	pivot_longer( gum_rot_d6:lassitude_d6, names_to='symptom', values_to='severity' ) %>% 
+	mutate(severity=fct_relabel( severity, ~str_split_i( .x, '_', 2 ) %>% str_to_sentence() ) ) %>% 
+	group_by(treatment) %>% 
+	mutate(treatment_avg_severity = sum(as.integer(severity))) %>% 
+	ungroup() %>% 
+	group_by(study_id) %>% 
+	group_by(study_avg_severity = sum(as.integer(severity))) %>% 
+	ungroup() %>% 
+	arrange(desc(treatment_avg_severity), desc(study_avg_severity)) %>% 
+	mutate(treatment=fct_inorder(treatment)) %>% 
+	mutate(study_id=fct_inorder(as.character(study_id))) %>% 
+	mutate(symptom_label=symptom %>% str_remove('_d6') %>% str_replace_all( '_', ' ' ) %>% str_to_title())
+
+df_treatments <- df %>%
+	select( treatment, dosing_regimen_for_scurvy ) %>% 
+	distinct() %>% 
+	mutate(treatment_label=fct_relabel( treatment, ~str_replace_all( .x, '_', ' ') %>% str_to_sentence() )) %>% 
+	mutate(treatment_description=case_match(treatment
+	,   'vinegar' ~ '2 spoonfulls, 3/day'
+	,   'sea_water' ~ 'Half pint/day'
+	,   'purgative_mixture' ~ 'Paste of garlic, mustard seed, horseradish, balsam of Peru, and gum myrrh, 3/day'
+	,   'dilute_sulfuric_acid' ~ '25 drops of elixir of vitriol, 3/day'
+	,   'cider' ~ 'Quart/day'
+	,   'citrus' ~ '2 lemons and 1 orange/day'
+	))
+```
+
+## Plot
+```{r plot}
+colours <- colour('muted')(length(levels(df$treatment))) %>% set_names(levels(df$treatment)) %>% enframe( name='treatment', value='colour' )
+colour_map <- df %>% 
+	select( study_id, treatment ) %>% 
+	inner_join( colours, by='treatment' ) %>% 
+	select(-treatment) %>% 
+	distinct() %>% 
+	deframe()
+
+p <- df %>% 
+	ggplot(aes( x=treatment, y=severity, fill=study_id )) +
+	geom_col( width=0.8, position=position_dodge2( padding=0.2, reverse=T ) ) +
+	facet_wrap( ~symptom_label, nrow=1 ) +
+	scale_fill_manual(values=colour_map) +
+	theme(legend.position='none') +
+	theme( axis.title.y=element_blank(), axis.text.y=element_text( colour='#AAAAAA', hjust=0.5 )) +
+	theme( axis.title.x=element_blank(), axis.text.x=element_blank() ) +
+	theme(panel.grid.major.y=element_line( colour='#555555', linewidth=rel(0.5) )) +
+	theme(panel.grid.major.x=element_blank() ) +
+	theme(plot.background=element_rect( fill='transparent', colour=NA )) +
+	theme(plot.margin=unit( c( 0, 0, 0, 0 ), "pt" )) +
+	scale_y_discrete(expand=c( 0, 0 )) +
+	coord_cartesian(clip='off')
+
+pb <- ggplot_build(p)
+pg <- ggplot_gtable(pb)
+x_layout <- pb$layout$panel_params[[1]]$guides$x$key
+x_range  <- pb$layout$panel_params[[1]]$x.range
+num_facets <- length(pb$layout$panel_params)
+```
+
+```{r table}
+pdf(NULL)
+plot(1:2, 1:2)
+par( ps=base_fontsize, family=font_family )
+df_treatments_plot <- df_treatments %>% 
+	mutate( box_label = paste0( '**', treatment_label, '**<br><span>', treatment_description, '</span>' ) 
+	      , relwidths = strwidth(treatment_description) ) %>% 
+	mutate(relwidths = relwidths / sum(relwidths)) %>% 
+	mutate(textend = cumsum(relwidths)) %>% 
+	mutate(textstart = head( c(0,textend), n=-1 ) ) %>% 
+	mutate(x = (textstart + textend)/2, y=0)
+dev.off()
+
+expected_facet_padding <- 0.020
+df_connection_points <- x_layout %>% 
+	as.data.frame() %>% 
+	rename( xstart='x', treatment='.value' ) %>% 
+	select( xstart, treatment ) %>% 
+	mutate(xstart=(xstart+expected_facet_padding)/(1+2*expected_facet_padding)) %>% 
+	left_join( df_treatments_plot, by='treatment' ) %>% 
+	select( treatment, x, xstart, y ) %>% 
+	mutate(ystart=0.2) %>% 
+	expand_grid(x_segment=1:num_facets) %>% 
+	mutate(xstart=(x_segment + xstart - 1)/num_facets) %>% 
+	mutate(group=1:n())
+
+t1 <- df_treatments_plot %>% 
+	ggplot() +
+	geom_sigmoid( aes( x=xstart, xend=x, y=ystart, yend=y, colour=treatment, group=group), linewidth=rel(2), direction='y', data=df_connection_points ) +
+	geom_richtext( aes( x=x, y=y, label=box_label, fill=treatment ), size=4, colour='white' ) +
+	scale_fill_manual(values=deframe(colours)) +
+	scale_colour_manual(values=deframe(colours)) +
+	coord_cartesian(clip='off') +
+	theme_void() +
+	theme(legend.position='none') +
+	theme( plot.background=element_rect( fill='transparent', colour=NA )) +
+	theme( panel.background=element_rect( fill='transparent', colour=NA )) +
+	theme( plot.margin=unit( c( 0, 0, 10, 0 ), 'pt' ), panel.margin=unit( c( 0, 0, 10, 0 ), 'pt' )) +
+	scale_x_continuous(expand=c(1.2*expected_facet_padding,0)) +
+	scale_y_continuous(expand=c( 0.00, 0.00 ))
+t1
+```
+
+```{r combined}
+cp <- p / t1 +
+	plot_layout(heights=c( 1, 0.2 )) +
+	plot_annotation( title='Scurvy Treatment'
+	               , subtitle='Symptom severity on day 6 of treatment for 12 symptomatic seamen in 1757'
+	               , caption='{medicaldata} | #TidyTuesday | github.com/ksomf' ) +
+	theme(plot.background = element_rect(fill='transparent'))
+		
+ggsave( '2023_wk30.png', plot=cp, width=16, height=10 )
+```
